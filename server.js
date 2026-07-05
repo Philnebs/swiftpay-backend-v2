@@ -1,7 +1,6 @@
-const express = require("express");
+import express from "express";
 const app = express();
 
-// THIS LINE IS CRITICAL - lets us read JSON from Flutter
 app.use(express.json());
 
 app.get("/api/health", (req, res) => {
@@ -19,7 +18,6 @@ app.get("/api/banks", (req, res) => {
   });
 });
 
-// MOCK ACCOUNT RESOLUTION
 app.post("/api/resolve-account", (req, res) => {
   const { accountNumber, bankCode } = req.body;
   console.log("Resolving:", accountNumber, bankCode);
@@ -34,7 +32,6 @@ app.post("/api/resolve-account", (req, res) => {
   }
 });
 
-// MOCK TRANSFER
 app.post("/api/transfer", (req, res) => {
   const { amount, bankCode, accountNumber, accountName } = req.body;
   console.log("Transfer:", req.body);
