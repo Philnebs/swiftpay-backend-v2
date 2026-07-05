@@ -23,6 +23,33 @@ app.get("/api/banks", (req, res) => {
     ]
   });
 });
+// MOCK ACCOUNT RESOLUTION
+app.post("/api/resolve-account", (req, res) => {
+  const { accountNumber, bankCode } = req.body;
+  console.log("Resolving:", accountNumber, bankCode);
+  
+  // Mock data - replace with real Monnify/Paystack later
+  if (accountNumber.length === 10) {
+    res.json({ 
+      status: "success", 
+      accountName: "TEST USER " + accountNumber.slice(-4) 
+    });
+  } else {
+    res.status(400).json({ status: "error", message: "Invalid account number" });
+  }
+});
 
+// MOCK TRANSFER
+app.post("/api/transfer", (req, res) => {
+  const { amount, bankCode, accountNumber, accountName } = req.body;
+  console.log("Transfer:", req.body);
+  
+  // Mock success
+  res.json({ 
+    status: "success", 
+    message: `Transfer of ₦${amount} to ${accountName} successful`,
+    reference: "SP" + Date.now()
+  });
+});
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
