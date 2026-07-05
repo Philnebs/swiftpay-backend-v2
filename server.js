@@ -1,7 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config();
 import express from "express";
-import Flutterwave from "flutterwave-node-v3";
 const app = express();
 
 
@@ -9,13 +8,12 @@ const app = express();
 app.use('/api/webhook/flutterwave', express.raw({type: 'application/json'}));
 app.use(express.json());
 
-const flw = new Flutterwave(process.env.FLW_PUBLIC_KEY, process.env.FLW_SECRET_KEY);
+
 app.get("/api/debug", (req, res) => {
   res.json({
     hasPublicKey: !!process.env.FLW_PUBLIC_KEY,
     hasSecretKey: !!process.env.FLW_SECRET_KEY,
-    hasSecretHash: !!process.env.FLW_SECRET_HASH,
-    flwPayment: typeof flw.Payment
+    hasSecretHash: !!process.env.FLW_SECRET_HASH
   });
 });
 
@@ -34,37 +32,56 @@ app.get("/api/banks", (req, res) => {
   });
 });
 
-// 1. CREATE PAYMENT LINK FOR FUNDING
+// 1. CREATE PAYMENT LINK FOR FUNDING - FIXED VERSION
 app.post('/api/fund-wallet', async (req, res) => {
   try {
     const { userId, amount, email, name } = req.body;
 
-    const payload = {
-      tx_ref: `SWIFTPAY-${userId}-${Date.now()}`,
-      amount: amount,
-      currency: "NGN",
-      redirect_url: "https://swiftpay.onrender.com/payment-success",
-      customer: {
-        email: email,
-        name: name,
-        phone_number: "08000000"
-      },
-      customizations: {
-        title: "Fund SwiftPay Wallet",
-        description: "Add money to your SwiftPay wallet",
-        logo: "https://your-logo-url.com/logo.png"
-      }
-    };
+    if (!userId || !amount || !email || !name) {
+      return res.status(400).json({ error: "Missing userId, amount, email, or name" });
+    }
 
-    const response = await flw.Payment.initiate(payload);
-    res.json({ 
-      status: "success",
-      link: response.data.link 
+    const tx_ref = `SWIFTPAY-${userId}-${Date.now()}`;
+
+    const response = await fetch("https://api.flutterwave.com/v3/payments", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.FLW_SECRET_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        tx_ref: tx_ref,
+        amount: amount,
+        currency: "NGN",
+        redirect_url: "https://swiftpay.onrender.com/payment-success",
+        payment_options: "card, banktransfer, ussd",
+        customer: {
+          email: email,
+          name: name,
+          phone_number: "08000000"
+        },
+        customizations: {
+          title: "Fund SwiftPay Wallet",
+          description: "Add money to your SwiftPay wallet",
+          logo: "https://your-logo-url.com/logo.png"
+        }
+      })
     });
+
+    const data = await response.json();
+
+    if (data.status === "success") {
+      res.json({ 
+        status: "success",
+        link: data.data.link 
+      });
+    } else {
+      res.status(400).json({ error: data.message });
+    }
 
   } catch (error) {
     console.log(error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Payment initiation failed" });
   }
 });
 
@@ -73,7 +90,7 @@ app.post('/api/webhook/flutterwave', async (req, res) => {
   const secretHash = process.env.FLW_SECRET_HASH;
   const signature = req.headers["verif-hash"];
 
-  if (!signature || signature!== secretHash) {
+  if (!signature || signature !== secretHash) {
     return res.status(401).json({error: "Unauthorized"});
   }
 
