@@ -40,16 +40,14 @@ app.post("/api/resolve-account", (req, res) => {
 });
 
 // MOCK TRANSFER
-app.post("/api/transfer", (req, res) => {
+app.post("/api/transfer", express.json(), (req, res) => {
   const { amount, bankCode, accountNumber, accountName } = req.body;
   console.log("Transfer:", req.body);
-  
+
   // Mock success
   res.json({ 
     status: "success", 
-    message: `Transfer of ₦${amount} to ${accountName} successful`,
+    message: `Transfer of ₦${amount} to ${accountName} successful`, // <-- backticks here
     reference: "SP" + Date.now()
   });
 });
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
