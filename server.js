@@ -1,7 +1,9 @@
-require('dotenv').config();
-const express = require('express');
-const Flutterwave = require('flutterwave-node-v3');
+import dotenv from "dotenv";
+dotenv.config();
+import express from "express";
+import Flutterwave from "flutterwave-node-v3";
 const app = express();
+
 
 // IMPORTANT: Webhook must come BEFORE express.json and use raw
 app.use('/api/webhook/flutterwave', express.raw({type: 'application/json'}));
