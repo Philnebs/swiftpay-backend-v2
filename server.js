@@ -10,6 +10,14 @@ app.use('/api/webhook/flutterwave', express.raw({type: 'application/json'}));
 app.use(express.json());
 
 const flw = new Flutterwave(process.env.FLW_PUBLIC_KEY, process.env.FLW_SECRET_KEY);
+app.get("/api/debug", (req, res) => {
+  res.json({
+    hasPublicKey: !!process.env.FLW_PUBLIC_KEY,
+    hasSecretKey: !!process.env.FLW_SECRET_KEY,
+    hasSecretHash: !!process.env.FLW_SECRET_HASH,
+    flwPayment: typeof flw.Payment
+  });
+});
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
