@@ -1,7 +1,12 @@
 import express from "express";
+import Flutterwave from "flutterwave-node-v3";
 const app = express();
 
+// IMPORTANT: Webhook must come BEFORE express.json and use raw
+app.use('/api/webhook/flutterwave', express.raw({type: 'application/json'}));
 app.use(express.json());
+
+const flw = new Flutterwave(process.env.FLW_PUBLIC_KEY, process.env.FLW_SECRET_KEY);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
@@ -18,9 +23,6 @@ app.get("/api/banks", (req, res) => {
   });
 });
 
-const Flutterwave = require('flutterwave-node-v3');
-const flw = new Flutterwave(process.env.FLW_PUBLIC_KEY, process.env.FLW_SECRET_KEY);
-
 // 1. CREATE PAYMENT LINK FOR FUNDING
 app.post('/api/fund-wallet', async (req, res) => {
   try {
@@ -34,6 +36,7 @@ app.post('/api/fund-wallet', async (req, res) => {
       customer: {
         email: email,
         name: name,
+        phone_number: "08000000"
       },
       customizations: {
         title: "Fund SwiftPay Wallet",
@@ -43,9 +46,13 @@ app.post('/api/fund-wallet', async (req, res) => {
     };
 
     const response = await flw.Payment.initiate(payload);
-    res.json({ link: response.data.link });
+    res.json({ 
+      status: "success",
+      link: response.data.link 
+    });
 
   } catch (error) {
+    console.log(error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -55,24 +62,22 @@ app.post('/api/webhook/flutterwave', async (req, res) => {
   const secretHash = process.env.FLW_SECRET_HASH;
   const signature = req.headers["verif-hash"];
 
-  if (signature!== secretHash) {
-    return res.status(401).end();
+  if (!signature || signature!== secretHash) {
+    return res.status(401).json({error: "Unauthorized"});
   }
 
-  const payload = req.body;
+  // IMPORTANT: because we used express.raw, we need to parse it
+  const payload = JSON.parse(req.body.toString());
 
   if (payload.event === "charge.completed" && payload.data.status === "successful") {
-    const { tx_ref, amount, customer } = payload.data;
-
-    // Extract userId from tx_ref: SWIFTPAY-userId-timestamp
+    const { tx_ref, amount } = payload.data;
     const userId = tx_ref.split('-')[1];
 
-    // CREDIT USER WALLET HERE
-    // await db.users.updateBalance(userId, amount);
-    console.log(`Credited ${amount} to user ${userId}`);
+    console.log(`✅ Credited ${amount} to user ${userId}`);
+    // HERE: await db.users.updateBalance(userId, amount);
   }
 
-  res.status(200).end();
+  res.status(200).send("OK");
 });
 
 app.post("/api/resolve-account", (req, res) => {
