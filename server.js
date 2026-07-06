@@ -4,13 +4,15 @@ import express from "express";
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import fetch from "node-fetch";
+import cors from "cors";
 
 const app = express();
+app.use(cors());
 
-// 1. CONNECT TO MONGODB
-mongoose.connect(process.env.MONGO_URL).then(() => console.log("MongoDB Connected")).catch(err => console.log(err));
+// 1. CONNECT TO MONGODB - FIXED TO MONGO_URI
+mongoose.connect(process.env.MONGO_URI).then(() => console.log("MongoDB Connected")).catch(err => console.log(err));
 
-// USER MODEL
+// USER MODEL - ADDED transactionPin
 const UserSchema = new mongoose.Schema({
   name: String,
   email: { type: String, unique: true },
@@ -18,7 +20,8 @@ const UserSchema = new mongoose.Schema({
   password: String,
   accountNumber: String,
   accountBank: String,
-  balance: { type: Number, default: 0 }
+  balance: { type: Number, default: 0 },
+  transactionPin: { type: String, default: null } // NEW
 });
 const User = mongoose.model("User", UserSchema);
 
@@ -26,16 +29,16 @@ const User = mongoose.model("User", UserSchema);
 app.use('/api/webhook/flutterwave', express.raw({type: 'application/json'}));
 app.use(express.json());
 
-app.get("/api/debug", (req, res) => {
-  res.json({ hasPublicKey:!!process.env.FLW_PUBLIC_KEY, hasSecretKey:!!process.env.FLW_SECRET_KEY, hasSecretHash:!!process.env.FLW_SECRET_HASH });
+app.get("/", (req, res) => {
+  res.json({ message: "SwiftPay API is Running 🚀" });
 });
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// 2. SIGNUP ROUTE
-app.post('/api/signup', async (req, res) => {
+// 2. SIGNUP ROUTE - RENAMED TO REGISTER
+app.post('/api/register', async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
     const existingUser = await User.findOne({ email });
@@ -52,7 +55,7 @@ app.post('/api/signup', async (req, res) => {
 
     const newUser = new User({ name, email, phone, password: hashedPassword, accountNumber: flwData.data.account_number, accountBank: flwData.data.bank_name, balance: 0 });
     await newUser.save();
-    res.status(201).json({ status: "success", message: "User created", accountNumber: flwData.data.account_number, bankName: flwData.data.bank_name, user: newUser });
+    res.status(201).json({ status: "success", message: "User created", accountNumber: flwData.data.account_number, bankName: flwData.data.bank_name, user: {id: newUser._id, name, email, accountNumber: newUser.accountNumber} });
 
   } catch (error) {
     console.log(error);
@@ -74,11 +77,38 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// 4. SET TRANSACTION PIN - NEW
+app.post('/api/set-pin', async (req, res) => {
+  try {
+    const { userId, pin } = req.body;
+    if (pin.length!== 4) return res.status(400).json({ error: "PIN must be 4 digits" });
+    const hashedPin = await bcrypt.hash(pin, 10);
+    await User.findByIdAndUpdate(userId, { transactionPin: hashedPin });
+    res.json({ status: "success", message: "Transaction PIN set successfully" });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to set PIN" });
+  }
+});
+
+// 5. FORGOT PASSWORD - NEW
+app.post('/api/forgot-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ error: "User not found" });
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await User.findByIdAndUpdate(user._id, { password: hashedPassword });
+    res.json({ status: "success", message: "Password reset successful" });
+  } catch (error) {
+    res.status(500).json({ error: "Password reset failed" });
+  }
+});
+
 app.get("/api/banks", (req, res) => {
   res.json({ status: "success", data: [ { name: "GTBank", code: "058" }, { name: "Access Bank", code: "044" }, { name: "First Bank", code: "011" } ] });
 });
 
-// 4. FUND WALLET
+// 6. FUND WALLET
 app.post('/api/fund-wallet', async (req, res) => {
   try {
     const { userId, amount, email, name } = req.body;
@@ -95,7 +125,7 @@ app.post('/api/fund-wallet', async (req, res) => {
   } catch (error) { console.log(error); res.status(500).json({ error: "Payment initiation failed" }); }
 });
 
-// 5. WEBHOOK - CREDIT WALLET
+// 7. WEBHOOK - CREDIT WALLET
 app.post('/api/webhook/flutterwave', async (req, res) => {
   const secretHash = process.env.FLW_SECRET_HASH;
   const signature = req.headers["verif-hash"];
@@ -110,7 +140,7 @@ app.post('/api/webhook/flutterwave', async (req, res) => {
   res.status(200).send("OK");
 });
 
-// 6. RESOLVE ACCOUNT
+// 8. RESOLVE ACCOUNT
 app.post("/api/resolve-account", async (req, res) => {
   const { accountNumber, bankCode } = req.body;
   const response = await fetch(`https://api.flutterwave.com/v3/accounts/resolve`, {
@@ -121,11 +151,26 @@ app.post("/api/resolve-account", async (req, res) => {
   res.json(data);
 });
 
-// 7. TRANSFER
-app.post("/api/transfer", (req, res) => {
-  const { amount, bankCode, accountNumber, accountName } = req.body;
-  console.log("Transfer:", req.body);
-  res.json({ status: "success", message: `Transfer of ₦${amount} to ${accountName} successful`, reference: "SP" + Date.now() });
+// 9. TRANSFER - UPDATED WITH PIN CHECK + BALANCE DEDUCTION
+app.post("/api/transfer", async (req, res) => {
+  try {
+    const { userId, amount, bankCode, accountNumber, accountName, pin } = req.body;
+    
+    const user = await User.findById(userId);
+    if(!user) return res.status(400).json({ error: "User not found" });
+    if(user.balance < amount) return res.status(400).json({ error: "Insufficient balance" });
+    
+    const isPinMatch = await bcrypt.compare(pin, user.transactionPin);
+    if(!isPinMatch) return res.status(400).json({ error: "Invalid Transaction PIN" });
+
+    // TODO: Call Flutterwave Transfer API here
+    // For now we just deduct balance
+    await User.findByIdAndUpdate(userId, { $inc: { balance: -amount } });
+    
+    res.json({ status: "success", message: `Transfer of ₦${amount} to ${accountName} successful`, reference: "SP" + Date.now(), newBalance: user.balance - amount });
+  } catch (error) {
+    res.status(500).json({ error: "Transfer failed" });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
