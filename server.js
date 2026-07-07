@@ -90,7 +90,6 @@ app.post('/api/signup', async (req, res) => {
     console.log(error);
     res.status(500).json({ error: "Signup failed" });
   }
-});
     if (existingUser) return res.status(400).json({ error: "User with email, phone or BVN already exists" });
     
     // HASH PASSWORD AND PIN
