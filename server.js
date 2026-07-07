@@ -41,7 +41,7 @@ app.get("/api/health", (req, res) => {
 });
 
 // 2. SIGNUP ROUTE - RENAMED TO REGISTER
-app.post('/api/register', async (req, res) => {
+app.post('/api/signup', async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
     const existingUser = await User.findOne({ email });
