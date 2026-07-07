@@ -11,8 +11,8 @@ app.use(cors());
 
 // 1. CONNECT TO MONGODB - FIXED TO MONGO_URI
 // 1. CONNECT TO MONGODB - FIXED TO USE MONGO_URI
-console.log("MONGO URI:", process.env.MONGO_URI)
-mongoose.connect(process.env.MONGO_URI)
+console.log("MONGO URI:", process.env.MONGO_URL)
+mongoose.connect(process.env.MONGO_URL)
   .then(() => console.log("MongoDB Connected"))
   .catch(err => console.log(err))
 // USER MODEL - ADDED transactionPin
