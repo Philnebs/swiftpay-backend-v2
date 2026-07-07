@@ -41,12 +41,11 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// 2. SIGNUP ROUTE - UPDATED WITH BVN + PIN
+// 2. SIGNUP ROUTE - BYPASS FLUTTERWAVE FOR TESTING
 app.post('/api/signup', async (req, res) => {
   try {
-    const { name, email, phone, password, bvn, transactionPin } = req.body; // ADDED bvn, transactionPin
+    const { name, email, phone, password, bvn, transactionPin } = req.body;
 
-    // VALIDATION
     if (!name ||!email ||!phone ||!password ||!bvn ||!transactionPin) {
       return res.status(400).json({ error: "All fields are required" });
     }
@@ -58,6 +57,40 @@ app.post('/api/signup', async (req, res) => {
     }
 
     const existingUser = await User.findOne({ $or: [{ email }, { phone }, { bvn }] });
+    if (existingUser) return res.status(400).json({ error: "User already exists" });
+    
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPin = await bcrypt.hash(transactionPin, 10);
+
+    // GENERATE FAKE ACCOUNT NUMBER FOR TESTING
+    let accountNumber;
+    do {
+      accountNumber = Math.floor(1000000 + Math.random() * 9000000).toString();
+    } while (await User.findOne({ accountNumber }));
+
+    const newUser = new User({ 
+      name, email, phone, bvn,
+      password: hashedPassword, 
+      transactionPin: hashedPin,
+      accountNumber: accountNumber,
+      accountBank: "SwiftPay Test Bank",
+      balance: 5000
+    });
+    await newUser.save();
+    
+    res.status(201).json({ 
+      status: "success", 
+      message: "Account created successfully", 
+      accountNumber: accountNumber, 
+      bankName: "SwiftPay Test Bank",
+      balance: 5000
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ error: "Signup failed" });
+  }
+});
     if (existingUser) return res.status(400).json({ error: "User with email, phone or BVN already exists" });
     
     // HASH PASSWORD AND PIN
