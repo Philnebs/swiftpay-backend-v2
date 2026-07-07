@@ -10,8 +10,11 @@ const app = express();
 app.use(cors());
 
 // 1. CONNECT TO MONGODB - FIXED TO MONGO_URI
-mongoose.connect(process.env.MONGO_URI).then(() => console.log("MongoDB Connected")).catch(err => console.log(err));
-
+// 1. CONNECT TO MONGODB - FIXED TO USE MONGO_URI
+console.log("MONGO URI:", process.env.MONGO_URI)
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB Connected"))
+  .catch(err => console.log(err))
 // USER MODEL - ADDED transactionPin
 const UserSchema = new mongoose.Schema({
   name: String,
