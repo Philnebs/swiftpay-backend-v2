@@ -1,8 +1,11 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const cors = require('cors');
-require('dotenv').config();
+import express from 'express';
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import User from './models/User.js'; // ADD .js HERE IMPORTANT
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -15,20 +18,16 @@ mongoose.connect(process.env.MONGO_URI)
 .then(() => console.log("MongoDB Connected"))
 .catch(err => console.log(err));
 
-// 2. USER MODEL
-const User = require('./models/User'); // Make sure you have models/User.js
-
-// 3. HEALTH CHECK
+// 2. HEALTH CHECK
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// 4. SIGNUP ROUTE - BYPASS FLUTTERWAVE FOR TESTING
+// 3. SIGNUP ROUTE - BYPASS FLUTTERWAVE
 app.post('/api/signup', async (req, res) => {
   try {
     const { name, email, phone, password, bvn, transactionPin } = req.body;
 
-    // VALIDATION
     if (!name ||!email ||!phone ||!password ||!bvn ||!transactionPin) {
       return res.status(400).json({ error: "All fields are required" });
     }
@@ -40,28 +39,23 @@ app.post('/api/signup', async (req, res) => {
     }
 
     const existingUser = await User.findOne({ $or: [{ email }, { phone }, { bvn }] });
-    if (existingUser) return res.status(400).json({ error: "User with email, phone or BVN already exists" });
+    if (existingUser) return res.status(400).json({ error: "User already exists" });
     
-    // HASH PASSWORD AND PIN
     const hashedPassword = await bcrypt.hash(password, 10);
     const hashedPin = await bcrypt.hash(transactionPin, 10);
 
-    // GENERATE FAKE ACCOUNT NUMBER FOR TESTING
     let accountNumber;
     do {
-      accountNumber = Math.floor(1000000000 + Math.random() * 9000000).toString();
+      accountNumber = Math.floor(1000000 + Math.random() * 9000000).toString();
     } while (await User.findOne({ accountNumber }));
 
     const newUser = new User({ 
-      name, 
-      email, 
-      phone, 
-      bvn,
+      name, email, phone, bvn,
       password: hashedPassword, 
       transactionPin: hashedPin,
       accountNumber: accountNumber,
       accountBank: "SwiftPay Test Bank",
-      balance: 5000 // Give test users 5000 naira
+      balance: 5000
     });
     await newUser.save();
     
@@ -79,7 +73,7 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
-// 5. LOGIN ROUTE
+// 4. LOGIN ROUTE
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -106,6 +100,5 @@ app.post('/api/login', async (req, res) => {
     res.status(500).json({ error: "Login failed" });
   }
 });
-
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
