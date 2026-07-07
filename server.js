@@ -9,22 +9,23 @@ import cors from "cors";
 const app = express();
 app.use(cors());
 
-// 1. CONNECT TO MONGODB - FIXED TO MONGO_URI
-// 1. CONNECT TO MONGODB - FIXED TO USE MONGO_URI
+// 1. CONNECT TO MONGODB
 console.log("MONGO URI:", process.env.MONGO_URL)
 mongoose.connect(process.env.MONGO_URL)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log(err))
-// USER MODEL - ADDED transactionPin
+ .then(() => console.log("MongoDB Connected"))
+ .catch(err => console.log(err))
+
+// USER MODEL - ADDED bvn
 const UserSchema = new mongoose.Schema({
   name: String,
   email: { type: String, unique: true },
   phone: String,
+  bvn: { type: String, unique: true }, // ADDED
   password: String,
   accountNumber: String,
   accountBank: String,
   balance: { type: Number, default: 0 },
-  transactionPin: { type: String, default: null } // NEW
+  transactionPin: { type: String, default: null }
 });
 const User = mongoose.model("User", UserSchema);
 
@@ -40,25 +41,71 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// 2. SIGNUP ROUTE - RENAMED TO REGISTER
+// 2. SIGNUP ROUTE - UPDATED WITH BVN + PIN
 app.post('/api/signup', async (req, res) => {
   try {
-    const { name, email, phone, password } = req.body;
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ error: "User already exists" });
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const { name, email, phone, password, bvn, transactionPin } = req.body; // ADDED bvn, transactionPin
 
+    // VALIDATION
+    if (!name ||!email ||!phone ||!password ||!bvn ||!transactionPin) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+    if (bvn.length!== 11 || isNaN(bvn)) {
+      return res.status(400).json({ error: "BVN must be 11 digits" });
+    }
+    if (transactionPin.length!== 4 || isNaN(transactionPin)) {
+      return res.status(400).json({ error: "PIN must be 4 digits" });
+    }
+
+    const existingUser = await User.findOne({ $or: [{ email }, { phone }, { bvn }] });
+    if (existingUser) return res.status(400).json({ error: "User with email, phone or BVN already exists" });
+    
+    // HASH PASSWORD AND PIN
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPin = await bcrypt.hash(transactionPin, 10);
+
+    // CREATE FLUTTERWAVE VIRTUAL ACCOUNT WITH REAL BVN
     const flwResponse = await fetch("https://api.flutterwave.com/v3/virtual-account-numbers", {
       method: "POST",
       headers: { "Authorization": `Bearer ${process.env.FLW_SECRET_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email, bvn: "00000", phonenumber: phone, firstname: name.split(' ')[0], lastname: name.split(' ').slice(1).join(' ') || name.split(' ')[0], narration: "SwiftPay Wallet" })
+      body: JSON.stringify({ 
+        email: email, 
+        bvn: bvn, // SEND REAL BVN NOW
+        phonenumber: phone, 
+        firstname: name.split(' ')[0], 
+        lastname: name.split(' ').slice(1).join(' ') || name.split(' ')[0], 
+        narration: "SwiftPay Wallet" 
+      })
     });
     const flwData = await flwResponse.json();
     if(flwData.status!== "success") return res.status(400).json({error: flwData.message});
 
-    const newUser = new User({ name, email, phone, password: hashedPassword, accountNumber: flwData.data.account_number, accountBank: flwData.data.bank_name, balance: 0 });
+    // SAVE USER
+    const newUser = new User({ 
+      name, 
+      email, 
+      phone, 
+      bvn, // SAVE BVN
+      password: hashedPassword, 
+      transactionPin: hashedPin, // SAVE PIN
+      accountNumber: flwData.data.account_number, 
+      accountBank: flwData.data.bank_name, 
+      balance: 0 
+    });
     await newUser.save();
-    res.status(201).json({ status: "success", message: "User created", accountNumber: flwData.data.account_number, bankName: flwData.data.bank_name, user: {id: newUser._id, name, email, accountNumber: newUser.accountNumber} });
+    
+    res.status(201).json({ 
+      status: "success", 
+      message: "User created", 
+      accountNumber: flwData.data.account_number, 
+      bankName: flwData.data.bank_name, 
+      user: {
+        id: newUser._id, 
+        name, 
+        email, 
+        accountNumber: newUser.accountNumber
+      } 
+    });
 
   } catch (error) {
     console.log(error);
@@ -80,7 +127,7 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// 4. SET TRANSACTION PIN - NEW
+// 4. SET TRANSACTION PIN - CAN DELETE THIS NOW BECAUSE PIN IS SET ON SIGNUP
 app.post('/api/set-pin', async (req, res) => {
   try {
     const { userId, pin } = req.body;
@@ -162,6 +209,7 @@ app.post("/api/transfer", async (req, res) => {
     const user = await User.findById(userId);
     if(!user) return res.status(400).json({ error: "User not found" });
     if(user.balance < amount) return res.status(400).json({ error: "Insufficient balance" });
+    if(!user.transactionPin) return res.status(400).json({ error: "Please set transaction PIN first" });
     
     const isPinMatch = await bcrypt.compare(pin, user.transactionPin);
     if(!isPinMatch) return res.status(400).json({ error: "Invalid Transaction PIN" });
