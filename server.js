@@ -59,13 +59,14 @@ app.post('/api/signup', async (req, res) => {
     });
     await newUser.save();
     
-    res.status(201).json({ 
-      status: "success", 
-      message: "Account created successfully", 
-      accountNumber: accountNumber, 
-      bankName: "SwiftPay Test Bank",
-      balance: 5000
-    });
+  res.status(201).json({
+  id: newUser._id, // <-- ADD THIS LINE
+  status: "success",
+  message: "Account created successfully",
+  accountNumber: accountNumber,
+  bankName: "SwiftPay Test Bank",
+  balance: 5000
+})
 
   } catch (error) {
     console.log(error);
